@@ -210,6 +210,7 @@ class PullDownButton extends StatefulWidget {
     this.scrollController,
     this.animationBuilder = defaultAnimationBuilder,
     this.routeTheme,
+    this.builder,
   });
 
   /// Called when the button is pressed to create the items to show in the menu.
@@ -222,6 +223,11 @@ class PullDownButton extends StatefulWidget {
   ///
   /// In order to achieve it all [PullDownMenuItem]s will automatically switch
   /// to the "selectable" view.
+  final Widget Function(
+    BuildContext context,
+    Widget button,
+    Future<void> Function() showMenu,
+  )? builder;
   final PullDownMenuItemBuilder itemBuilder;
 
   /// Builder that provides [BuildContext] as well as the `showMenu` function to
@@ -332,8 +338,9 @@ class _PullDownButtonState extends State<PullDownButton> {
 
     final hasLeading = MenuConfig.menuHasLeading(items);
 
-    setState(() => state = PullDownButtonAnimationState.opened);
-
+    setState(() {
+      this.state = PullDownButtonAnimationState.opened;
+    });
     final action = await _showMenu<VoidCallback>(
       context: context,
       items: items,
@@ -349,8 +356,9 @@ class _PullDownButtonState extends State<PullDownButton> {
 
     if (!mounted) return;
 
-    setState(() => state = PullDownButtonAnimationState.closed);
-
+    setState(() {
+      this.state = PullDownButtonAnimationState.closed;
+    });
     if (action != null) {
       action.call();
     } else {
@@ -360,11 +368,103 @@ class _PullDownButtonState extends State<PullDownButton> {
 
   @override
   Widget build(BuildContext context) {
-    final buttonBuilder = widget.buttonBuilder(context, showButtonMenu);
-
-    return widget.animationBuilder?.call(context, state, buttonBuilder) ??
-        buttonBuilder;
+    final buttonBuilder = _Button(
+        buttonAnchor: widget.buttonAnchor,
+        itemBuilder: widget.itemBuilder,
+        onStateChange: (state) => setState(() {
+              this.state = state;
+            }),
+        position: widget.position,
+        itemsOrder: widget.itemsOrder,
+        menuOffset: widget.menuOffset,
+        scrollController: widget.scrollController,
+        routeTheme: widget.routeTheme,
+        onCanceled: widget.onCanceled,
+        buttonBuilder: widget.buttonBuilder);
+    var animButton =
+        widget.animationBuilder?.call(context, state, buttonBuilder) ??
+            buttonBuilder;
+    if (widget.builder != null) {
+      final b = widget.builder!.call(context, buttonBuilder, showButtonMenu);
+      // return b;
+      return widget.animationBuilder?.call(context, state, b) ?? buttonBuilder;
+    }
+    return animButton;
   }
+}
+
+class _Button extends StatefulWidget {
+  const _Button(
+      {super.key,
+      required this.buttonAnchor,
+      required this.itemBuilder,
+      required this.onStateChange,
+      required this.position,
+      required this.itemsOrder,
+      required this.menuOffset,
+      required this.scrollController,
+      required this.routeTheme,
+      required this.onCanceled,
+      required this.buttonBuilder});
+  final PullDownMenuAnchor? buttonAnchor;
+  final PullDownMenuItemBuilder itemBuilder;
+  final void Function(PullDownButtonAnimationState state) onStateChange;
+  final PullDownMenuPosition position;
+  final PullDownMenuItemsOrder itemsOrder;
+  final double menuOffset;
+  final ScrollController? scrollController;
+  final PullDownMenuRouteTheme? routeTheme;
+  final PullDownMenuCanceled? onCanceled;
+
+  final PullDownMenuButtonBuilder buttonBuilder;
+
+  @override
+  State<_Button> createState() => _ButtonState();
+}
+
+class _ButtonState extends State<_Button> {
+  Future<void> showButtonMenu() async {
+    var button = context.getRect;
+    if (widget.buttonAnchor != null) {
+      button = _anchorToButtonPart(context, button, widget.buttonAnchor!);
+    }
+    final animationAlignment =
+        PullDownMenuRoute.animationAlignment(context, button);
+
+    final items = widget.itemBuilder(context);
+
+    if (items.isEmpty) return;
+
+    final hasLeading = MenuConfig.menuHasLeading(items);
+
+    widget.onStateChange.call(PullDownButtonAnimationState.opened);
+    final action = await _showMenu<VoidCallback>(
+      context: context,
+      items: items,
+      buttonRect: button,
+      menuPosition: widget.position,
+      itemsOrder: widget.itemsOrder,
+      routeTheme: widget.routeTheme,
+      hasLeading: hasLeading,
+      animationAlignment: animationAlignment,
+      menuOffset: widget.menuOffset,
+      scrollController: widget.scrollController,
+    );
+
+    if (!mounted) return;
+
+    widget.onStateChange(PullDownButtonAnimationState.closed);
+
+    if (action != null) {
+      action.call();
+    } else {
+      widget.onCanceled?.call();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      widget.buttonBuilder(context, showButtonMenu);
 }
 
 /// Displays a pull-down menu with [items] at [position].
